@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path"
 
 	"k8s.io/client-go/kubernetes"
@@ -42,6 +43,7 @@ func NewClient(configPath string) (*Client, error) {
 func (c *Client) GetRawResource(ctx context.Context, relativePath string) (map[string]any, error) {
 	body, err := c.client.RESTClient().Get().AbsPath(path.Join("apis", relativePath)).DoRaw(ctx)
 	if err != nil {
+		slog.Warn("failed to fetch resource", slog.Any("error", err))
 		return nil, err
 	}
 
