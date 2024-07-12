@@ -32,10 +32,17 @@ type SlackWebhook struct {
 }
 
 type SlackAttachment struct {
-	Color      string   `json:"color"`
-	AuthorName string   `json:"author_name"`
-	Text       string   `json:"text"`
-	MrkdwnIn   []string `json:"mrkdwn_in"`
+	Color      string                 `json:"color"`
+	AuthorName string                 `json:"author_name"`
+	Text       string                 `json:"text"`
+	MrkdwnIn   []string               `json:"mrkdwn_in"`
+	Fields     []SlackAttachmentField `json:"fields,omitempty"`
+}
+
+type SlackAttachmentField struct {
+	Title string `json:"title"`
+	Value string `json:"value"`
+	Short bool   `json:"short"`
 }
 
 func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
@@ -58,6 +65,12 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 				AuthorName: fmt.Sprintf("%s/%s.%s", notif.Resource.Kind, notif.Resource.Name, notif.Resource.Namespace),
 				Text:       fmt.Sprintf("%s by %s", action, notif.Email),
 				MrkdwnIn:   []string{"text"},
+				Fields: []SlackAttachmentField{
+					{
+						Title: "Project",
+						Value: notif.GoogleCloudProjectID,
+					},
+				},
 			},
 		},
 	})

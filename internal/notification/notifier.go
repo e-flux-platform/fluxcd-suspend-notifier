@@ -7,9 +7,10 @@ import (
 )
 
 type Notification struct {
-	Resource  k8s.Resource
-	Suspended bool
-	Email     string
+	Resource             k8s.Resource
+	Suspended            bool
+	Email                string
+	GoogleCloudProjectID string
 }
 
 type Notifier interface {

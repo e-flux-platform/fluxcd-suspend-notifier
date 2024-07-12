@@ -15,23 +15,23 @@ import (
 )
 
 type Watcher struct {
-	projectID string
-	k8sClient k8sClient
-	store     store
-	notifier  notifier
+	googleCloudProjectID string
+	k8sClient            k8sClient
+	store                store
+	notifier             notifier
 }
 
 func NewWatcher(
-	projectID string,
+	googleCloudProjectID string,
 	k8sClient k8sClient,
 	store store,
 	notifier notifier,
 ) *Watcher {
 	return &Watcher{
-		projectID: projectID,
-		k8sClient: k8sClient,
-		store:     store,
-		notifier:  notifier,
+		googleCloudProjectID: googleCloudProjectID,
+		k8sClient:            k8sClient,
+		store:                store,
+		notifier:             notifier,
 	}
 }
 
@@ -49,7 +49,7 @@ type notifier interface {
 }
 
 func (w *Watcher) Watch(ctx context.Context) error {
-	return auditlog.Tail(ctx, w.projectID, func(logEntry *audit.AuditLog) error {
+	return auditlog.Tail(ctx, w.googleCloudProjectID, func(logEntry *audit.AuditLog) error {
 		if code := logEntry.GetStatus().GetCode(); code != 0 {
 			slog.Warn("operation appeared to fail", slog.Int("code", int(code)))
 			return nil
@@ -101,9 +101,10 @@ func (w *Watcher) Watch(ctx context.Context) error {
 		)
 
 		return w.notifier.Notify(ctx, notification.Notification{
-			Resource:  resource,
-			Suspended: isSuspended,
-			Email:     email,
+			Resource:             resource,
+			Suspended:            isSuspended,
+			Email:                email,
+			GoogleCloudProjectID: w.googleCloudProjectID,
 		})
 	})
 }
