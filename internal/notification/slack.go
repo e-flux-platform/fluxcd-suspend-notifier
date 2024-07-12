@@ -67,7 +67,7 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 				MrkdwnIn:   []string{"text"},
 				Fields: []SlackAttachmentField{
 					{
-						Title: "Project",
+						Title: "project",
 						Value: notif.GoogleCloudProjectID,
 					},
 				},
