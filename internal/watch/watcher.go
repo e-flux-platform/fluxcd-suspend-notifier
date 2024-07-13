@@ -16,6 +16,7 @@ import (
 
 type Watcher struct {
 	googleCloudProjectID string
+	gkeClusterName       string
 	k8sClient            k8sClient
 	store                store
 	notifier             notifier
@@ -49,7 +50,7 @@ type notifier interface {
 }
 
 func (w *Watcher) Watch(ctx context.Context) error {
-	return auditlog.Tail(ctx, w.googleCloudProjectID, func(logEntry *audit.AuditLog) error {
+	return auditlog.Tail(ctx, w.googleCloudProjectID, w.gkeClusterName, func(logEntry *audit.AuditLog) error {
 		if code := logEntry.GetStatus().GetCode(); code != 0 {
 			slog.Warn("operation appeared to fail", slog.Int("code", int(code)))
 			return nil

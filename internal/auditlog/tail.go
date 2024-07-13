@@ -13,7 +13,7 @@ import (
 	"google.golang.org/genproto/googleapis/cloud/audit"
 )
 
-func Tail(ctx context.Context, projectID string, cb func(*audit.AuditLog) error) error {
+func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
 	client, err := logging.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
@@ -34,7 +34,7 @@ func Tail(ctx context.Context, projectID string, cb func(*audit.AuditLog) error)
 			[]string{
 				`resource.type="k8s_cluster"`,
 				fmt.Sprintf(`log_name="projects/%s/logs/cloudaudit.googleapis.com%%2Factivity"`, projectID),
-				`resource.labels.cluster_name="platform"`,
+				fmt.Sprintf(`resource.labels.cluster_name="%s"`, clusterName),
 				`protoPayload."@type"="type.googleapis.com/google.cloud.audit.AuditLog"`,
 				`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.patch"`,
 				`-protoPayload.authenticationInfo.principalEmail=~"system:.*"`,
@@ -43,7 +43,7 @@ func Tail(ctx context.Context, projectID string, cb func(*audit.AuditLog) error)
 		),
 	}
 	if err = stream.Send(req); err != nil {
-		return fmt.Errorf("stream.Send error: %w", err)
+		return fmt.Errorf("stream send failed: %w", err)
 	}
 
 	return read(ctx, stream, cb)

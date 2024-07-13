@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	GoogleCloudProjectID string `yaml:"googleCloudProjectId"`
+	GKEClusterName       string `yaml:"gkeClusterName"`
 	BadgerPath           string `yaml:"badgerPath"`
 	KubernetesConfigPath string `yaml:"kubernetesConfigPath,omitempty"`
 	Notification         struct {
