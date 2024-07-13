@@ -6,8 +6,8 @@ DOCKER_LATEST_TAG ?= latest
 
 build:
 	docker buildx build \
-	--cache-from type=local,src=/tmp/.buildx-$(BRANCH_NAME)-fluxcd-suspend-notifier-cache \
-	--cache-to type=local,mode=max,dest=/tmp/.buildx-$(BRANCH_NAME)-fluxcd-suspend-notifier-cache \
+	--cache-from type=local,src=/tmp/.buildx-$(BRANCH_NAME)-cache \
+	--cache-to type=local,mode=max,dest=/tmp/.buildx-$(BRANCH_NAME)-cache \
 	--provenance mode=min,inline-only=true \
 	--tag $(DOCKER_REPOSITORY)/fluxcd-suspend-notifier:$(GIT_HASH) \
 	--tag $(DOCKER_REPOSITORY)/fluxcd-suspend-notifier:$(DOCKER_LATEST_TAG) \
