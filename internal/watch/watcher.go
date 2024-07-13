@@ -95,7 +95,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 
 		slog.Info(
 			"suspension status modified",
-			slog.String("resourceDetails", resourceName),
+			slog.String("resource", resourceName),
 			slog.String("user", email),
 			slog.Bool("suspended", isSuspended),
 		)
