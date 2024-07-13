@@ -24,12 +24,14 @@ type Watcher struct {
 
 func NewWatcher(
 	googleCloudProjectID string,
+	gkeClusterName string,
 	k8sClient k8sClient,
 	store store,
 	notifier notifier,
 ) *Watcher {
 	return &Watcher{
 		googleCloudProjectID: googleCloudProjectID,
+		gkeClusterName:       gkeClusterName,
 		k8sClient:            k8sClient,
 		store:                store,
 		notifier:             notifier,

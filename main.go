@@ -65,6 +65,7 @@ func run(ctx context.Context) error {
 
 	watcher := watch.NewWatcher(
 		conf.GoogleCloudProjectID,
+		conf.GKEClusterName,
 		k8sClient,
 		store,
 		notification.NewAggregateNotifier(notifiers),
