@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	logging "cloud.google.com/go/logging/apiv2"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
@@ -35,6 +36,7 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 				// "rpc error: code = OutOfRange desc = Session has run for the maximum allowed duration of 1h. To
 				// continue, start a new session with the same request"
 				slog.Warn("session expired, restarting", slog.Any("error", err))
+				time.Sleep(time.Second * 5)
 				continue
 			}
 			return fmt.Errorf("log tailing failed: %w", err)
