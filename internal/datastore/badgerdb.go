@@ -1,8 +1,10 @@
 package datastore
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 
@@ -13,6 +15,13 @@ var ErrNotFound = errors.New("not found")
 
 type Store struct {
 	db *badger.DB
+}
+
+type Entry struct {
+	Resource  k8s.Resource `json:"resource"`
+	Suspended bool         `json:"suspended"`
+	UpdatedBy string       `json:"updatedBy"`
+	UpdatedAt time.Time    `json:"updatedAt"`
 }
 
 func NewBadgerStore(path string) (*Store, error) {
@@ -28,8 +37,8 @@ func NewBadgerStore(path string) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) IsSuspended(resource k8s.Resource) (bool, error) {
-	var suspended bool
+func (s *Store) GetEntry(resource k8s.Resource) (Entry, error) {
+	var entry Entry
 	err := s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(buildKey(resource))
 		if err != nil {
@@ -42,23 +51,46 @@ func (s *Store) IsSuspended(resource k8s.Resource) (bool, error) {
 		if err != nil {
 			return fmt.Errorf("failed to get value: %w", err)
 		}
-		if len(val) != 1 {
-			return fmt.Errorf("expected value length of 1, got %d", len(val))
+		if err = json.Unmarshal(val, &entry); err != nil {
+			return fmt.Errorf("failed to unmarshal entry: %w", err)
 		}
-		suspended = val[0] == 1
 		return nil
 	})
-	return suspended, err
+	return entry, err
 }
 
-func (s *Store) SetSuspended(resource k8s.Resource, suspended bool) error {
+func (s *Store) SaveEntry(entry Entry) error {
 	return s.db.Update(func(txn *badger.Txn) error {
-		var b byte
-		if suspended {
-			b = 1
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return fmt.Errorf("failed ot marshal entry: %w", err)
 		}
-		return txn.Set(buildKey(resource), []byte{b})
+		return txn.Set(buildKey(entry.Resource), data)
 	})
+}
+
+func (s *Store) AllEntries() ([]Entry, error) {
+	entries := make([]Entry, 0)
+	err := s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		prefix := []byte("resource:")
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return fmt.Errorf("failed to get value: %w", err)
+			}
+			var entry Entry
+			if err = json.Unmarshal(val, &entry); err != nil {
+				return fmt.Errorf("failed to unmarshal entry: %w", err)
+			}
+			entries = append(entries, entry)
+		}
+		return nil
+	})
+	return entries, err
 }
 
 func (s *Store) Close() error {
@@ -66,5 +98,5 @@ func (s *Store) Close() error {
 }
 
 func buildKey(resource k8s.Resource) []byte {
-	return []byte(fmt.Sprintf("%s:%s:%s", resource.Kind, resource.Namespace, resource.Name))
+	return []byte(fmt.Sprintf("resource:%s:%s:%s", resource.Kind, resource.Namespace, resource.Name))
 }

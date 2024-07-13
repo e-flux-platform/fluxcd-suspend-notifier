@@ -50,8 +50,6 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 }
 
 func read(ctx context.Context, stream loggingpb.LoggingServiceV2_TailLogEntriesClient, cb func(*audit.AuditLog) error) error {
-	slog.Info("reading logs")
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -64,28 +62,29 @@ func read(ctx context.Context, stream loggingpb.LoggingServiceV2_TailLogEntriesC
 			case err != nil:
 				return fmt.Errorf("stream receive failed: %w", err)
 			default:
-				for _, entry := range resp.GetEntries() {
-					payload := entry.GetProtoPayload()
-					if payload == nil {
-						slog.Warn("unexpected payload type")
-						continue
-					}
+			}
 
-					msg, err := payload.UnmarshalNew()
-					if err != nil {
-						slog.Warn("failed to unmarshal payload", slog.Any("error", err))
-						continue
-					}
+			for _, entry := range resp.GetEntries() {
+				payload := entry.GetProtoPayload()
+				if payload == nil {
+					slog.Warn("unexpected payload type")
+					continue
+				}
 
-					auditLog, ok := msg.(*audit.AuditLog)
-					if !ok {
-						slog.Warn("unexpected payload type", slog.Any("type", fmt.Sprintf("%t", msg)))
-						continue
-					}
+				msg, err := payload.UnmarshalNew()
+				if err != nil {
+					slog.Warn("failed to unmarshal payload", slog.Any("error", err))
+					continue
+				}
 
-					if err = cb(auditLog); err != nil {
-						return fmt.Errorf("callback failed: %w", err)
-					}
+				auditLog, ok := msg.(*audit.AuditLog)
+				if !ok {
+					slog.Warn("unexpected payload type", slog.Any("type", fmt.Sprintf("%t", msg)))
+					continue
+				}
+
+				if err = cb(auditLog); err != nil {
+					return fmt.Errorf("callback failed: %w", err)
 				}
 			}
 		}

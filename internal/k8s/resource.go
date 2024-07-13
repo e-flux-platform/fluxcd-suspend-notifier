@@ -9,6 +9,7 @@ type Resource struct {
 	Namespace string
 	Kind      string
 	Name      string
+	Path      string
 }
 
 func ResourceFromPath(path string) (Resource, error) {
@@ -20,5 +21,6 @@ func ResourceFromPath(path string) (Resource, error) {
 		Namespace: parts[3],
 		Kind:      strings.TrimSuffix(parts[4], "s"),
 		Name:      parts[5],
+		Path:      path,
 	}, nil
 }
