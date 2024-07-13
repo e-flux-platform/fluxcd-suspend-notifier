@@ -11,9 +11,32 @@ import (
 	logging "cloud.google.com/go/logging/apiv2"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"google.golang.org/genproto/googleapis/cloud/audit"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := tailLogs(ctx, projectID, clusterName, cb); err != nil {
+			if grpcErr, ok := status.FromError(err); ok && grpcErr.Code() == codes.OutOfRange {
+				// Expected error case:
+				// "rpc error: code = OutOfRange desc = Session has run for the maximum allowed duration of 1h. To
+				// continue, start a new session with the same request"
+				slog.Warn("session expired, restarting", slog.Any("error", err))
+				continue
+			}
+			return fmt.Errorf("log tailing failed: %w", err)
+		}
+	}
+}
+
+func tailLogs(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
 	client, err := logging.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
@@ -46,10 +69,10 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 		return fmt.Errorf("stream send failed: %w", err)
 	}
 
-	return read(ctx, stream, cb)
+	return readStream(ctx, stream, cb)
 }
 
-func read(ctx context.Context, stream loggingpb.LoggingServiceV2_TailLogEntriesClient, cb func(*audit.AuditLog) error) error {
+func readStream(ctx context.Context, stream loggingpb.LoggingServiceV2_TailLogEntriesClient, cb func(*audit.AuditLog) error) error {
 	for {
 		select {
 		case <-ctx.Done():
