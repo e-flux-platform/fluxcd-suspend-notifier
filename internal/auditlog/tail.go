@@ -16,6 +16,12 @@ import (
 )
 
 func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
+	client, err := logging.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	defer client.Close()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -23,7 +29,7 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 		default:
 		}
 
-		if err := tailLogs(ctx, projectID, clusterName, cb); err != nil {
+		if err = tailLogs(ctx, client, projectID, clusterName, cb); err != nil {
 			if grpcErr, ok := status.FromError(err); ok && grpcErr.Code() == codes.OutOfRange {
 				// Expected error case:
 				// "rpc error: code = OutOfRange desc = Session has run for the maximum allowed duration of 1h. To
@@ -36,13 +42,7 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 	}
 }
 
-func tailLogs(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
-	client, err := logging.NewClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
-	defer client.Close()
-
+func tailLogs(ctx context.Context, client *logging.Client, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
 	stream, err := client.TailLogEntries(ctx)
 	if err != nil {
 		return fmt.Errorf("request to tail log entries failed: %w", err)
