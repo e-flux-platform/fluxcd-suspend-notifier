@@ -11,8 +11,8 @@ import (
 
 	logging "cloud.google.com/go/logging/apiv2"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
+	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/cloud/audit"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
@@ -23,6 +23,9 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 	}
 	defer client.Close()
 
+	// Limiter used to throttle log tailing restarts
+	limiter := rate.NewLimiter(rate.Every(time.Second*15), 3)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -30,13 +33,13 @@ func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.Aud
 		default:
 		}
 
+		if err = limiter.Wait(ctx); err != nil {
+			return fmt.Errorf("limit wait failed: %w", err)
+		}
+
 		if err = tailLogs(ctx, client, projectID, clusterName, cb); err != nil {
-			if grpcErr, ok := status.FromError(err); ok && grpcErr.Code() == codes.OutOfRange {
-				// Expected error case:
-				// "rpc error: code = OutOfRange desc = Session has run for the maximum allowed duration of 1h. To
-				// continue, start a new session with the same request"
-				slog.Warn("session expired, restarting", slog.Any("error", err))
-				time.Sleep(time.Second * 5)
+			if _, ok := status.FromError(err); ok {
+				slog.Warn("gRPC request terminated, restarting", slog.Any("error", err))
 				continue
 			}
 			return fmt.Errorf("log tailing failed: %w", err)
