@@ -81,14 +81,14 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	}
 	resourceGroups := maps.Values(uniqueResourceGroups)
 
-	if err = w.bootstrap(ctx, resourceGroups); err != nil {
-		return fmt.Errorf("failed to bootstrap: %w", err)
+	if err = w.init(ctx, resourceGroups); err != nil {
+		return fmt.Errorf("failed to initialize: %w", err)
 	}
 	return w.watch(ctx, resourceGroups)
 }
 
-func (w *Watcher) bootstrap(ctx context.Context, groups []k8s.ResourceType) error {
-	slog.Info("bootstrapping")
+func (w *Watcher) init(ctx context.Context, groups []k8s.ResourceType) error {
+	slog.Info("initializing")
 	for _, group := range groups {
 		resources, err := w.k8sClient.GetRawResources(ctx, group)
 		if err != nil {
