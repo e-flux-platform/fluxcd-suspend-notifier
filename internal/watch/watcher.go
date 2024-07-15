@@ -103,7 +103,6 @@ func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resour
 	}
 	suspended, _ := spec["suspend"].(bool)
 
-	var updated bool
 	entry, err := w.store.GetEntry(resource)
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
@@ -120,11 +119,9 @@ func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resour
 			return nil
 		}
 		return fmt.Errorf("failed to fetch entry: %w", err)
-	} else {
-		updated = suspended != entry.Suspended
 	}
 
-	if !updated {
+	if suspended == entry.Suspended {
 		return nil // Probably something else about the resource modified
 	}
 
