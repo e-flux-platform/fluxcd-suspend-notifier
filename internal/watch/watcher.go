@@ -106,11 +106,20 @@ func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resour
 	var updated bool
 	entry, err := w.store.GetEntry(resource)
 	if err != nil {
-		if !errors.Is(err, datastore.ErrNotFound) {
-			return err
+		if errors.Is(err, datastore.ErrNotFound) {
+			// First time seeing the resource, so we'll save the state, but not notify - as we don't know what has
+			// changed
+			if err = w.store.SaveEntry(datastore.Entry{
+				Resource:  resource,
+				Suspended: suspended,
+				UpdatedBy: updatedBy,
+				UpdatedAt: time.Now().UTC(),
+			}); err != nil {
+				return err
+			}
+			return nil
 		}
-		updated = true
-		entry = datastore.Entry{}
+		return fmt.Errorf("failed to fetch entry: %w", err)
 	} else {
 		updated = suspended != entry.Suspended
 	}
