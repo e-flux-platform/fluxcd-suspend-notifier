@@ -68,7 +68,7 @@ func run(ctx context.Context) error {
 		conf.GKEClusterName,
 		k8sClient,
 		store,
-		notification.NewAggregateNotifier(notifiers),
+		notification.NewMultiNotifier(notifiers),
 	)
 
 	return watcher.Watch(ctx)
