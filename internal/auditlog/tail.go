@@ -16,6 +16,21 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var suspendableResourceNames = []string{
+	"alerts",
+	"buckets",
+	"gitrepositories",
+	"helmcharts",
+	"helmreleases",
+	"helmrepositories",
+	"imagerepositories",
+	"imageupdateautomations",
+	"kustomizations",
+	"ocirepositories",
+	"providers",
+	"receivers",
+}
+
 func Tail(ctx context.Context, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
 	client, err := logging.NewClient(ctx)
 	if err != nil {
@@ -64,7 +79,7 @@ func tailLogs(ctx context.Context, client *logging.Client, projectID, clusterNam
 				fmt.Sprintf(`log_name="projects/%s/logs/cloudaudit.googleapis.com%%2Factivity"`, projectID),
 				fmt.Sprintf(`resource.labels.cluster_name="%s"`, clusterName),
 				`protoPayload."@type"="type.googleapis.com/google.cloud.audit.AuditLog"`,
-				`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.patch"`,
+				fmt.Sprintf(`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.(%s)\.patch"`, strings.Join(suspendableResourceNames, "|")),
 				`-protoPayload.authenticationInfo.principalEmail=~"system:.*"`,
 			},
 			" AND ",
