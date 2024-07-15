@@ -69,34 +69,10 @@ func (s *Store) SaveEntry(entry Entry) error {
 	})
 }
 
-func (s *Store) AllEntries() ([]Entry, error) {
-	entries := make([]Entry, 0)
-	err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte("resource:")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			val, err := item.ValueCopy(nil)
-			if err != nil {
-				return fmt.Errorf("failed to get value: %w", err)
-			}
-			var entry Entry
-			if err = json.Unmarshal(val, &entry); err != nil {
-				return fmt.Errorf("failed to unmarshal entry: %w", err)
-			}
-			entries = append(entries, entry)
-		}
-		return nil
-	})
-	return entries, err
-}
-
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
 func buildKey(resource k8s.Resource) []byte {
-	return []byte(fmt.Sprintf("resource:%s:%s:%s", resource.Kind, resource.Namespace, resource.Name))
+	return []byte(fmt.Sprintf("resource:%s:%s:%s:%s", resource.Type.Group, resource.Type.Kind, resource.Namespace, resource.Name))
 }

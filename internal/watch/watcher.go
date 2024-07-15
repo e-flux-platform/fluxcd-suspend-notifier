@@ -7,7 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"golang.org/x/exp/maps"
 	"google.golang.org/genproto/googleapis/cloud/audit"
+	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/auditlog"
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/datastore"
@@ -40,13 +43,14 @@ func NewWatcher(
 }
 
 type k8sClient interface {
-	GetRawResource(ctx context.Context, path string) (map[string]any, error)
+	GetRawResource(ctx context.Context, resource k8s.Resource) (map[string]any, error)
+	GetRawResources(ctx context.Context, group k8s.ResourceType) (map[string]any, error)
+	GetCustomResourceDefinitions(ctx context.Context, listOptions metav1.ListOptions) (*v1.CustomResourceDefinitionList, error)
 }
 
 type store interface {
 	GetEntry(k8s.Resource) (datastore.Entry, error)
 	SaveEntry(datastore.Entry) error
-	AllEntries() ([]datastore.Entry, error)
 }
 
 type notifier interface {
@@ -54,22 +58,80 @@ type notifier interface {
 }
 
 func (w *Watcher) Watch(ctx context.Context) error {
-	// Re-check resource suspension states, in case any have been modified since the process was last running
-	slog.Info("re-checking resource suspension states")
-	entries, err := w.store.AllEntries()
+	crds, err := w.k8sClient.GetCustomResourceDefinitions(ctx, metav1.ListOptions{
+		LabelSelector: "app.kubernetes.io/part-of=flux",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to fetch all entries: %w", err)
-	}
-	for _, entry := range entries {
-		if err = w.checkSuspensionStatus(ctx, entry.Resource, "<unknown>"); err != nil {
-			// We don't return an error here, as CRD versions are liable to change as fluxcd is upgraded
-			slog.Warn("failed to re-check suspension status", slog.Any("error", err))
-		}
+		return err
 	}
 
-	// Watch for new modifications
+	uniqueResourceGroups := make(map[string]k8s.ResourceType)
+	for _, crd := range crds.Items {
+		for _, version := range crd.Spec.Versions {
+			if _, exists := version.Schema.OpenAPIV3Schema.Properties["spec"].Properties["suspend"]; !exists {
+				continue
+			}
+			key := fmt.Sprintf("%s:%s", crd.Spec.Group, crd.Spec.Names.Plural)
+			uniqueResourceGroups[key] = k8s.ResourceType{
+				Group:   crd.Spec.Group,
+				Version: version.Name,
+				Kind:    crd.Spec.Names.Plural,
+			}
+		}
+	}
+	resourceGroups := maps.Values(uniqueResourceGroups)
+
+	if err = w.bootstrap(ctx, resourceGroups); err != nil {
+		return fmt.Errorf("failed to bootstrap: %w", err)
+	}
+	return w.watch(ctx, resourceGroups)
+}
+
+func (w *Watcher) bootstrap(ctx context.Context, groups []k8s.ResourceType) error {
+	slog.Info("bootstrapping")
+	for _, group := range groups {
+		resources, err := w.k8sClient.GetRawResources(ctx, group)
+		if err != nil {
+			return err
+		}
+		items, ok := resources["items"].([]any)
+		if !ok {
+			return errors.New("expected items to be set")
+		}
+		for _, i := range items {
+			item, ok := i.(map[string]any)
+			if !ok {
+				return errors.New("invalid item")
+			}
+			spec, ok := item["spec"].(map[string]any)
+			if !ok {
+				return errors.New("invalid spec")
+			}
+			metadata, ok := item["metadata"].(map[string]any)
+			if !ok {
+				return errors.New("invalid metadata")
+			}
+			resource := k8s.Resource{
+				Type:      group,
+				Namespace: metadata["namespace"].(string),
+				Name:      metadata["name"].(string),
+			}
+			if err = w.processResource(ctx, resource, spec, "<unknown>"); err != nil {
+				return fmt.Errorf("failed to process resource: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (w *Watcher) watch(ctx context.Context, groups []k8s.ResourceType) error {
 	slog.Info("watching for resource modifications")
-	return auditlog.Tail(ctx, w.googleCloudProjectID, w.gkeClusterName, func(logEntry *audit.AuditLog) error {
+	resourceKinds := make([]string, 0, len(groups))
+	for _, group := range groups {
+		resourceKinds = append(resourceKinds, group.Kind)
+	}
+
+	return auditlog.Tail(ctx, w.googleCloudProjectID, w.gkeClusterName, resourceKinds, func(logEntry *audit.AuditLog) error {
 		if code := logEntry.GetStatus().GetCode(); code != 0 {
 			slog.Warn("operation appeared to fail", slog.Int("code", int(code)))
 			return nil
@@ -83,7 +145,17 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			return err
 		}
 
-		if err = w.checkSuspensionStatus(ctx, resource, email); err != nil {
+		res, err := w.k8sClient.GetRawResource(ctx, resource)
+		if err != nil {
+			return fmt.Errorf("failed to get raw resource: %w", err)
+		}
+
+		spec, ok := res["spec"].(map[string]any)
+		if !ok {
+			return errors.New("unexpected response payload")
+		}
+
+		if err = w.processResource(ctx, resource, spec, email); err != nil {
 			return fmt.Errorf("failed to re-check suspension status: %w", err)
 		}
 
@@ -91,16 +163,12 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	})
 }
 
-func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resource, updatedBy string) error {
-	res, err := w.k8sClient.GetRawResource(ctx, resource.Path)
-	if err != nil {
-		return fmt.Errorf("failed to get raw resource: %w", err)
-	}
-
-	spec, ok := res["spec"].(map[string]any)
-	if !ok {
-		return errors.New("unexpected response payload")
-	}
+func (w *Watcher) processResource(
+	ctx context.Context,
+	resource k8s.Resource,
+	spec map[string]any,
+	updatedBy string,
+) error {
 	suspended, _ := spec["suspend"].(bool)
 
 	entry, err := w.store.GetEntry(resource)
@@ -108,6 +176,12 @@ func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resour
 		if errors.Is(err, datastore.ErrNotFound) {
 			// First time seeing the resource, so we'll save the state, but not notify - as we don't know what has
 			// changed
+			slog.Info(
+				"new resource discovered",
+				slog.String("kind", resource.Type.Kind),
+				slog.String("resource", resource.Name),
+				slog.Bool("suspended", suspended),
+			)
 			if err = w.store.SaveEntry(datastore.Entry{
 				Resource:  resource,
 				Suspended: suspended,
@@ -136,7 +210,8 @@ func (w *Watcher) checkSuspensionStatus(ctx context.Context, resource k8s.Resour
 
 	slog.Info(
 		"suspension status updated",
-		slog.String("resource", resource.Path),
+		slog.String("kind", resource.Type.Kind),
+		slog.String("resource", resource.Name),
 		slog.String("user", updatedBy),
 		slog.Bool("suspended", suspended),
 	)

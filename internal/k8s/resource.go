@@ -5,11 +5,16 @@ import (
 	"strings"
 )
 
+type ResourceType struct {
+	Group   string `json:"group"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
+}
+
 type Resource struct {
-	Namespace string
-	Kind      string
-	Name      string
-	Path      string
+	Type      ResourceType `json:"type"`
+	Namespace string       `json:"namespace"`
+	Name      string       `json:"name"`
 }
 
 func ResourceFromPath(path string) (Resource, error) {
@@ -18,9 +23,12 @@ func ResourceFromPath(path string) (Resource, error) {
 		return Resource{}, fmt.Errorf("unexpected path format: %s", path)
 	}
 	return Resource{
+		Type: ResourceType{
+			Group:   parts[0],
+			Version: parts[1],
+			Kind:    parts[4],
+		},
 		Namespace: parts[3],
-		Kind:      strings.TrimSuffix(parts[4], "s"),
 		Name:      parts[5],
-		Path:      path,
 	}, nil
 }

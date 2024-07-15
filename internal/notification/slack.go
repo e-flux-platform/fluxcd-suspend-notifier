@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -58,11 +59,13 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 		color = "good"
 	}
 
+	kind := strings.TrimSuffix(notif.Resource.Type.Kind, "s")
+
 	reqBody, err := json.Marshal(SlackWebhook{
 		Attachments: []SlackAttachment{
 			{
 				Color:      color,
-				AuthorName: fmt.Sprintf("%s/%s.%s", notif.Resource.Kind, notif.Resource.Name, notif.Resource.Namespace),
+				AuthorName: fmt.Sprintf("%s/%s.%s", kind, notif.Resource.Name, notif.Resource.Namespace),
 				Text:       fmt.Sprintf("%s by %s", action, notif.Email),
 				MrkdwnIn:   []string{"text"},
 				Fields: []SlackAttachmentField{
