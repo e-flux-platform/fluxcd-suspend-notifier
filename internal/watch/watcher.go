@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/auditlog"
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/datastore"
+	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/fluxcd"
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/k8s"
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/notification"
 )
@@ -43,13 +45,13 @@ func NewWatcher(
 }
 
 type k8sClient interface {
-	GetRawResource(ctx context.Context, resource k8s.Resource) (map[string]any, error)
-	GetRawResources(ctx context.Context, group k8s.ResourceType) (map[string]any, error)
+	GetRawResource(ctx context.Context, resource k8s.ResourceReference) ([]byte, error)
+	GetRawResources(ctx context.Context, group k8s.ResourceType) ([]byte, error)
 	GetCustomResourceDefinitions(ctx context.Context, listOptions metav1.ListOptions) (*v1.CustomResourceDefinitionList, error)
 }
 
 type store interface {
-	GetEntry(k8s.Resource) (datastore.Entry, error)
+	GetEntry(k8s.ResourceReference) (datastore.Entry, error)
 	SaveEntry(datastore.Entry) error
 }
 
@@ -90,33 +92,21 @@ func (w *Watcher) Watch(ctx context.Context) error {
 func (w *Watcher) init(ctx context.Context, groups []k8s.ResourceType) error {
 	slog.Info("initializing")
 	for _, group := range groups {
-		resources, err := w.k8sClient.GetRawResources(ctx, group)
+		res, err := w.k8sClient.GetRawResources(ctx, group)
 		if err != nil {
 			return err
 		}
-		items, ok := resources["items"].([]any)
-		if !ok {
-			return errors.New("expected items to be set")
+		var resourceList fluxcd.ResourceList
+		if err = json.Unmarshal(res, &resourceList); err != nil {
+			return fmt.Errorf("failed to unmarshal resource: %w", err)
 		}
-		for _, i := range items {
-			item, ok := i.(map[string]any)
-			if !ok {
-				return errors.New("invalid item")
-			}
-			spec, ok := item["spec"].(map[string]any)
-			if !ok {
-				return errors.New("invalid spec")
-			}
-			metadata, ok := item["metadata"].(map[string]any)
-			if !ok {
-				return errors.New("invalid metadata")
-			}
-			resource := k8s.Resource{
+		for _, resource := range resourceList.Items {
+			resourceRef := k8s.ResourceReference{
 				Type:      group,
-				Namespace: metadata["namespace"].(string),
-				Name:      metadata["name"].(string),
+				Namespace: resource.Metadata.Namespace,
+				Name:      resource.Metadata.Name,
 			}
-			if err = w.processResource(ctx, resource, spec, "<unknown>"); err != nil {
+			if err = w.processResource(ctx, resourceRef, resource, "<unknown>"); err != nil {
 				return fmt.Errorf("failed to process resource: %w", err)
 			}
 		}
@@ -140,22 +130,22 @@ func (w *Watcher) watch(ctx context.Context, groups []k8s.ResourceType) error {
 		resourceName := logEntry.GetResourceName()
 		email := logEntry.GetAuthenticationInfo().GetPrincipalEmail()
 
-		resource, err := k8s.ResourceFromPath(resourceName)
+		resourceRef, err := k8s.ResourceReferenceFromPath(resourceName)
 		if err != nil {
 			return err
 		}
 
-		res, err := w.k8sClient.GetRawResource(ctx, resource)
+		res, err := w.k8sClient.GetRawResource(ctx, resourceRef)
 		if err != nil {
 			return fmt.Errorf("failed to get raw resource: %w", err)
 		}
 
-		spec, ok := res["spec"].(map[string]any)
-		if !ok {
-			return errors.New("unexpected response payload")
+		var resource fluxcd.Resource
+		if err = json.Unmarshal(res, &resource); err != nil {
+			return fmt.Errorf("failed to unmarshal resource: %w", err)
 		}
 
-		if err = w.processResource(ctx, resource, spec, email); err != nil {
+		if err = w.processResource(ctx, resourceRef, resource, email); err != nil {
 			return fmt.Errorf("failed to re-check suspension status: %w", err)
 		}
 
@@ -165,26 +155,24 @@ func (w *Watcher) watch(ctx context.Context, groups []k8s.ResourceType) error {
 
 func (w *Watcher) processResource(
 	ctx context.Context,
-	resource k8s.Resource,
-	spec map[string]any,
+	resourceRef k8s.ResourceReference,
+	resource fluxcd.Resource,
 	updatedBy string,
 ) error {
-	suspended, _ := spec["suspend"].(bool)
-
-	entry, err := w.store.GetEntry(resource)
+	entry, err := w.store.GetEntry(resourceRef)
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
 			// First time seeing the resource, so we'll save the state, but not notify - as we don't know what has
 			// changed
 			slog.Info(
 				"new resource discovered",
-				slog.String("kind", resource.Type.Kind),
-				slog.String("resource", resource.Name),
-				slog.Bool("suspended", suspended),
+				slog.String("kind", resourceRef.Type.Kind),
+				slog.String("resource", resourceRef.Name),
+				slog.Bool("suspended", resource.Spec.Suspend),
 			)
 			if err = w.store.SaveEntry(datastore.Entry{
-				Resource:  resource,
-				Suspended: suspended,
+				Resource:  resourceRef,
+				Suspended: resource.Spec.Suspend,
 				UpdatedBy: updatedBy,
 				UpdatedAt: time.Now().UTC(),
 			}); err != nil {
@@ -195,12 +183,20 @@ func (w *Watcher) processResource(
 		return fmt.Errorf("failed to fetch entry: %w", err)
 	}
 
-	if suspended == entry.Suspended {
+	if resource.Spec.Suspend == entry.Suspended {
 		return nil // Probably something else about the resource modified
 	}
 
-	entry.Resource = resource
-	entry.Suspended = suspended
+	slog.Info(
+		"suspension status updated",
+		slog.String("kind", resourceRef.Type.Kind),
+		slog.String("resourceRef", resourceRef.Name),
+		slog.String("user", updatedBy),
+		slog.Bool("suspended", resource.Spec.Suspend),
+	)
+
+	entry.Resource = resourceRef
+	entry.Suspended = resource.Spec.Suspend
 	entry.UpdatedBy = updatedBy
 	entry.UpdatedAt = time.Now().UTC()
 
@@ -208,18 +204,10 @@ func (w *Watcher) processResource(
 		return err
 	}
 
-	slog.Info(
-		"suspension status updated",
-		slog.String("kind", resource.Type.Kind),
-		slog.String("resource", resource.Name),
-		slog.String("user", updatedBy),
-		slog.Bool("suspended", suspended),
-	)
-
 	return w.notifier.Notify(ctx, notification.Notification{
-		Resource:             resource,
-		Suspended:            suspended,
-		Email:                updatedBy,
+		Resource:             entry.Resource,
+		Suspended:            entry.Suspended,
+		Email:                entry.UpdatedBy,
 		GoogleCloudProjectID: w.googleCloudProjectID,
 	})
 }

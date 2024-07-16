@@ -11,18 +11,18 @@ type ResourceType struct {
 	Kind    string `json:"kind"`
 }
 
-type Resource struct {
+type ResourceReference struct {
 	Type      ResourceType `json:"type"`
 	Namespace string       `json:"namespace"`
 	Name      string       `json:"name"`
 }
 
-func ResourceFromPath(path string) (Resource, error) {
+func ResourceReferenceFromPath(path string) (ResourceReference, error) {
 	parts := strings.Split(path, "/")
 	if len(parts) != 6 {
-		return Resource{}, fmt.Errorf("unexpected path format: %s", path)
+		return ResourceReference{}, fmt.Errorf("unexpected path format: %s", path)
 	}
-	return Resource{
+	return ResourceReference{
 		Type: ResourceType{
 			Group:   parts[0],
 			Version: parts[1],

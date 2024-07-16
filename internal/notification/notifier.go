@@ -7,7 +7,7 @@ import (
 )
 
 type Notification struct {
-	Resource             k8s.Resource
+	Resource             k8s.ResourceReference
 	Suspended            bool
 	Email                string
 	GoogleCloudProjectID string

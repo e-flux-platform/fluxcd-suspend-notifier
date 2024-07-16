@@ -18,10 +18,10 @@ type Store struct {
 }
 
 type Entry struct {
-	Resource  k8s.Resource `json:"resource"`
-	Suspended bool         `json:"suspended"`
-	UpdatedBy string       `json:"updatedBy"`
-	UpdatedAt time.Time    `json:"updatedAt"`
+	Resource  k8s.ResourceReference `json:"resource"`
+	Suspended bool                  `json:"suspended"`
+	UpdatedBy string                `json:"updatedBy"`
+	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
 func NewBadgerStore(path string) (*Store, error) {
@@ -37,7 +37,7 @@ func NewBadgerStore(path string) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) GetEntry(resource k8s.Resource) (Entry, error) {
+func (s *Store) GetEntry(resource k8s.ResourceReference) (Entry, error) {
 	var entry Entry
 	err := s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(buildKey(resource))
@@ -73,6 +73,6 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func buildKey(resource k8s.Resource) []byte {
+func buildKey(resource k8s.ResourceReference) []byte {
 	return []byte(fmt.Sprintf("resource:%s:%s:%s:%s", resource.Type.Group, resource.Type.Kind, resource.Namespace, resource.Name))
 }

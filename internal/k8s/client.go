@@ -2,8 +2,6 @@ package k8s
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"path"
 
@@ -50,7 +48,7 @@ func NewClient(configPath string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) GetRawResource(ctx context.Context, resource Resource) (map[string]any, error) {
+func (c *Client) GetRawResource(ctx context.Context, resource ResourceReference) ([]byte, error) {
 	absPath := path.Join(
 		"apis",
 		resource.Type.Group,
@@ -60,39 +58,27 @@ func (c *Client) GetRawResource(ctx context.Context, resource Resource) (map[str
 		resource.Type.Kind,
 		resource.Name,
 	)
-
 	body, err := c.client.RESTClient().Get().AbsPath(absPath).DoRaw(ctx)
 	if err != nil {
 		slog.Warn("failed to fetch resource", slog.Any("error", err), slog.Any("path", absPath))
 		return nil, err
 	}
-
-	var res map[string]any
-	if err = json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("invalid response: %w", err)
-	}
-	return res, nil
+	return body, nil
 }
 
-func (c *Client) GetRawResources(ctx context.Context, group ResourceType) (map[string]any, error) {
+func (c *Client) GetRawResources(ctx context.Context, group ResourceType) ([]byte, error) {
 	absPath := path.Join(
 		"apis",
 		group.Group,
 		group.Version,
 		group.Kind,
 	)
-
 	body, err := c.client.RESTClient().Get().AbsPath(absPath).DoRaw(ctx)
 	if err != nil {
-		slog.Warn("failed to fetch resource", slog.Any("error", err), slog.Any("path", absPath))
+		slog.Warn("failed to fetch resources", slog.Any("error", err), slog.Any("path", absPath))
 		return nil, err
 	}
-
-	var res map[string]any
-	if err = json.Unmarshal(body, &res); err != nil {
-		return nil, fmt.Errorf("invalid response: %w", err)
-	}
-	return res, nil
+	return body, nil
 }
 
 func (c *Client) GetCustomResourceDefinitions(ctx context.Context, listOptions metav1.ListOptions) (*v1.CustomResourceDefinitionList, error) {
