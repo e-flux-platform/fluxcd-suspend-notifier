@@ -190,7 +190,7 @@ func (w *Watcher) processResource(
 	slog.Info(
 		"suspension status updated",
 		slog.String("kind", resourceRef.Type.Kind),
-		slog.String("resourceRef", resourceRef.Name),
+		slog.String("resource", resourceRef.Name),
 		slog.String("user", updatedBy),
 		slog.Bool("suspended", resource.Spec.Suspend),
 	)
