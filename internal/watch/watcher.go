@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
-	"golang.org/x/exp/maps"
 	"google.golang.org/genproto/googleapis/cloud/audit"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,26 +80,35 @@ func (w *Watcher) resolveFluxResourceTypes(ctx context.Context) ([]k8s.ResourceT
 		return nil, fmt.Errorf("failed to fetch crds: %w", err)
 	}
 
-	uniqueResourceTypes := make(map[string]k8s.ResourceType)
+	types := make([]k8s.ResourceType, 0, len(crds.Items))
 	for _, crd := range crds.Items {
 		for _, version := range crd.Spec.Versions {
+			// We're only interested in resources that can be suspended
 			if _, exists := version.Schema.OpenAPIV3Schema.Properties["spec"].Properties["suspend"]; !exists {
 				continue
 			}
-			key := fmt.Sprintf("%s:%s", crd.Spec.Group, crd.Spec.Names.Plural)
-			uniqueResourceTypes[key] = k8s.ResourceType{
+			types = append(types, k8s.ResourceType{
 				Group:   crd.Spec.Group,
 				Version: version.Name,
 				Kind:    crd.Spec.Names.Plural,
-			}
+			})
 		}
 	}
-	return maps.Values(uniqueResourceTypes), nil
+	return types, nil
 }
 
 func (w *Watcher) init(ctx context.Context, types []k8s.ResourceType) error {
 	slog.Info("initializing")
+	seen := make(map[string]struct{})
 	for _, t := range types {
+		// We only need to fetch against one version per group+kind
+		key := fmt.Sprintf("%s:%s", t.Group, t.Kind)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		// Fetch raw fluxcd resource for this specific type
 		res, err := w.k8sClient.GetRawResources(ctx, t)
 		if err != nil {
 			return err
@@ -139,7 +148,7 @@ func (w *Watcher) watch(ctx context.Context, types []k8s.ResourceType) error {
 			return err
 		}
 
-		if !isWatchedResource(resourceRef, types) {
+		if !slices.Contains(types, resourceRef.Type) {
 			slog.Info("ignoring non-watched resource", slog.String("kind", resourceRef.Type.Kind))
 			return nil
 		}
@@ -179,15 +188,12 @@ func (w *Watcher) processResource(
 				slog.String("resource", resourceRef.Name),
 				slog.Bool("suspended", resource.Spec.Suspend),
 			)
-			if err = w.store.SaveEntry(datastore.Entry{
+			return w.store.SaveEntry(datastore.Entry{
 				Resource:  resourceRef,
 				Suspended: resource.Spec.Suspend,
 				UpdatedBy: updatedBy,
 				UpdatedAt: time.Now().UTC(),
-			}); err != nil {
-				return err
-			}
-			return nil
+			})
 		}
 		return fmt.Errorf("failed to fetch entry: %w", err)
 	}
@@ -219,13 +225,4 @@ func (w *Watcher) processResource(
 		Email:                entry.UpdatedBy,
 		GoogleCloudProjectID: w.googleCloudProjectID,
 	})
-}
-
-func isWatchedResource(ref k8s.ResourceReference, types []k8s.ResourceType) bool {
-	for _, t := range types {
-		if t.Group == ref.Type.Group && t.Kind == ref.Type.Kind {
-			return true
-		}
-	}
-	return false
 }
