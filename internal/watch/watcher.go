@@ -60,39 +60,47 @@ type notifier interface {
 }
 
 func (w *Watcher) Watch(ctx context.Context) error {
+	resourceTypes, err := w.resolveFluxResourceTypes(ctx)
+	if err != nil {
+		return fmt.Errorf("could not resolve flux resource types: %w", err)
+	}
+
+	if err = w.init(ctx, resourceTypes); err != nil {
+		return fmt.Errorf("failed to initialize: %w", err)
+	}
+
+	return w.watch(ctx, resourceTypes)
+}
+
+func (w *Watcher) resolveFluxResourceTypes(ctx context.Context) ([]k8s.ResourceType, error) {
 	crds, err := w.k8sClient.GetCustomResourceDefinitions(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/part-of=flux",
 	})
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to fetch crds: %w", err)
 	}
 
-	uniqueResourceGroups := make(map[string]k8s.ResourceType)
+	uniqueResourceTypes := make(map[string]k8s.ResourceType)
 	for _, crd := range crds.Items {
 		for _, version := range crd.Spec.Versions {
 			if _, exists := version.Schema.OpenAPIV3Schema.Properties["spec"].Properties["suspend"]; !exists {
 				continue
 			}
 			key := fmt.Sprintf("%s:%s", crd.Spec.Group, crd.Spec.Names.Plural)
-			uniqueResourceGroups[key] = k8s.ResourceType{
+			uniqueResourceTypes[key] = k8s.ResourceType{
 				Group:   crd.Spec.Group,
 				Version: version.Name,
 				Kind:    crd.Spec.Names.Plural,
 			}
 		}
 	}
-	resourceGroups := maps.Values(uniqueResourceGroups)
-
-	if err = w.init(ctx, resourceGroups); err != nil {
-		return fmt.Errorf("failed to initialize: %w", err)
-	}
-	return w.watch(ctx, resourceGroups)
+	return maps.Values(uniqueResourceTypes), nil
 }
 
-func (w *Watcher) init(ctx context.Context, groups []k8s.ResourceType) error {
+func (w *Watcher) init(ctx context.Context, types []k8s.ResourceType) error {
 	slog.Info("initializing")
-	for _, group := range groups {
-		res, err := w.k8sClient.GetRawResources(ctx, group)
+	for _, t := range types {
+		res, err := w.k8sClient.GetRawResources(ctx, t)
 		if err != nil {
 			return err
 		}
@@ -102,7 +110,7 @@ func (w *Watcher) init(ctx context.Context, groups []k8s.ResourceType) error {
 		}
 		for _, resource := range resourceList.Items {
 			resourceRef := k8s.ResourceReference{
-				Type:      group,
+				Type:      t,
 				Namespace: resource.Metadata.Namespace,
 				Name:      resource.Metadata.Name,
 			}
@@ -114,14 +122,10 @@ func (w *Watcher) init(ctx context.Context, groups []k8s.ResourceType) error {
 	return nil
 }
 
-func (w *Watcher) watch(ctx context.Context, groups []k8s.ResourceType) error {
+func (w *Watcher) watch(ctx context.Context, types []k8s.ResourceType) error {
 	slog.Info("watching for resource modifications")
-	resourceKinds := make([]string, 0, len(groups))
-	for _, group := range groups {
-		resourceKinds = append(resourceKinds, group.Kind)
-	}
 
-	return auditlog.Tail(ctx, w.googleCloudProjectID, w.gkeClusterName, resourceKinds, func(logEntry *audit.AuditLog) error {
+	return auditlog.Tail(ctx, w.googleCloudProjectID, w.gkeClusterName, func(logEntry *audit.AuditLog) error {
 		if code := logEntry.GetStatus().GetCode(); code != 0 {
 			slog.Warn("operation appeared to fail", slog.Int("code", int(code)))
 			return nil
@@ -133,6 +137,11 @@ func (w *Watcher) watch(ctx context.Context, groups []k8s.ResourceType) error {
 		resourceRef, err := k8s.ResourceReferenceFromPath(resourceName)
 		if err != nil {
 			return err
+		}
+
+		if !isWatchedResource(resourceRef, types) {
+			slog.Info("ignoring non-watched resource", slog.String("kind", resourceRef.Type.Kind))
+			return nil
 		}
 
 		res, err := w.k8sClient.GetRawResource(ctx, resourceRef)
@@ -210,4 +219,13 @@ func (w *Watcher) processResource(
 		Email:                entry.UpdatedBy,
 		GoogleCloudProjectID: w.googleCloudProjectID,
 	})
+}
+
+func isWatchedResource(ref k8s.ResourceReference, types []k8s.ResourceType) bool {
+	for _, t := range types {
+		if t.Group == ref.Type.Group && t.Kind == ref.Type.Kind {
+			return true
+		}
+	}
+	return false
 }

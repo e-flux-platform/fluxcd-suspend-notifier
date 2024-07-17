@@ -16,13 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func Tail(
-	ctx context.Context,
-	projectID string,
-	clusterName string,
-	resourceKinds []string,
-	cb func(*audit.AuditLog) error,
-) error {
+func Tail(ctx context.Context, projectID string, clusterName string, cb func(*audit.AuditLog) error) error {
 	client, err := logging.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
@@ -43,7 +37,7 @@ func Tail(
 			return fmt.Errorf("limit wait failed: %w", err)
 		}
 
-		if err = tailLogs(ctx, client, projectID, clusterName, resourceKinds, cb); err != nil {
+		if err = tailLogs(ctx, client, projectID, clusterName, cb); err != nil {
 			if _, ok := status.FromError(err); ok {
 				slog.Warn("gRPC request terminated, restarting", slog.Any("error", err))
 				continue
@@ -53,14 +47,7 @@ func Tail(
 	}
 }
 
-func tailLogs(
-	ctx context.Context,
-	client *logging.Client,
-	projectID string,
-	clusterName string,
-	resourceKinds []string,
-	cb func(*audit.AuditLog) error,
-) error {
+func tailLogs(ctx context.Context, client *logging.Client, projectID, clusterName string, cb func(*audit.AuditLog) error) error {
 	stream, err := client.TailLogEntries(ctx)
 	if err != nil {
 		return fmt.Errorf("request to tail log entries failed: %w", err)
@@ -77,7 +64,7 @@ func tailLogs(
 				fmt.Sprintf(`log_name="projects/%s/logs/cloudaudit.googleapis.com%%2Factivity"`, projectID),
 				fmt.Sprintf(`resource.labels.cluster_name="%s"`, clusterName),
 				`protoPayload."@type"="type.googleapis.com/google.cloud.audit.AuditLog"`,
-				fmt.Sprintf(`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.(%s)\.patch"`, strings.Join(resourceKinds, "|")),
+				`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.(patch|create)"`,
 				`-protoPayload.authenticationInfo.principalEmail=~"system:.*"`,
 			},
 			" AND ",
