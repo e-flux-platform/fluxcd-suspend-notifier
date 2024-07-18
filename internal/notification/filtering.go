@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/expr-lang/expr"
-	_ "github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 )
 
