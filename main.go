@@ -31,7 +31,7 @@ func run(ctx context.Context) error {
 		return errors.New("config path environment variable not set")
 	}
 
-	conf, err := config.Parse(configPath)
+	conf, err := config.ParseFile(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}

@@ -20,6 +20,8 @@ import (
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/notification"
 )
 
+// Watcher is used to orchestrate notifications. It discovers fluxcd resources, watches for changes, and notifies when
+// the suspension status changes.
 type Watcher struct {
 	googleCloudProjectID string
 	gkeClusterName       string
@@ -28,6 +30,7 @@ type Watcher struct {
 	notifier             notifier
 }
 
+// NewWatcher instantiates and returns Watcher
 func NewWatcher(
 	googleCloudProjectID string,
 	gkeClusterName string,
@@ -59,6 +62,8 @@ type notifier interface {
 	Notify(context.Context, notification.Notification) error
 }
 
+// Watch blocks waiting for fluxcd resource suspension statuses to change. When a change is observed, the notifier
+// is invoked.
 func (w *Watcher) Watch(ctx context.Context) error {
 	resourceTypes, err := w.resolveFluxResourceTypes(ctx)
 	if err != nil {
@@ -72,6 +77,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 	return w.watch(ctx, resourceTypes)
 }
 
+// resolveFluxResourceTypes returns fluxcd resource types; specifically only those that can be suspended.
 func (w *Watcher) resolveFluxResourceTypes(ctx context.Context) ([]k8s.ResourceType, error) {
 	crds, err := w.k8sClient.GetCustomResourceDefinitions(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/part-of=flux",
@@ -97,6 +103,9 @@ func (w *Watcher) resolveFluxResourceTypes(ctx context.Context) ([]k8s.ResourceT
 	return types, nil
 }
 
+// init retries the suspension status of all fluxcd resource instances that are a suspendable resource type. This is
+// useful when starting from scratch, to build an initial picture. Equally, if the application has been down for a
+// period of time, it allows for the state to be synchronised.
 func (w *Watcher) init(ctx context.Context, types []k8s.ResourceType) error {
 	slog.Info("initializing")
 	seen := make(map[string]struct{})
@@ -131,6 +140,8 @@ func (w *Watcher) init(ctx context.Context, types []k8s.ResourceType) error {
 	return nil
 }
 
+// watch tails audit logs, waiting for modifications to fluxcd resource types that are suspendable. When a modification
+// is observed, the resource state is evaluated via processResource
 func (w *Watcher) watch(ctx context.Context, types []k8s.ResourceType) error {
 	slog.Info("watching for resource modifications")
 
@@ -171,6 +182,8 @@ func (w *Watcher) watch(ctx context.Context, types []k8s.ResourceType) error {
 	})
 }
 
+// processResource checks to see if the suspend status has been modified. If it has, a notification is dispatched. If
+// the resource has never been seen before, we simply save the state.
 func (w *Watcher) processResource(
 	ctx context.Context,
 	resourceRef k8s.ResourceReference,

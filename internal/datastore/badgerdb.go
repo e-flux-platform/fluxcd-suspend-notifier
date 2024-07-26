@@ -11,12 +11,16 @@ import (
 	"github.com/e-flux-platform/fluxcd-suspend-notifier/internal/k8s"
 )
 
+// ErrNotFound is returned when an entry cannot be found in the underlying store
 var ErrNotFound = errors.New("not found")
 
+// Store is a basic badgerdb backed persistence mechanism
 type Store struct {
 	db *badger.DB
 }
 
+// Entry represents a single item held by the store. It relates to a single resource reference, and holds information
+// about its suspension status.
 type Entry struct {
 	Resource  k8s.ResourceReference `json:"resource"`
 	Suspended bool                  `json:"suspended"`
@@ -24,6 +28,7 @@ type Entry struct {
 	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
+// NewBadgerStore instantiates a Store instance. Data will be persisted the directory pointed at by the supplied path.
 func NewBadgerStore(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("badger store path cannot be empty")
@@ -37,6 +42,7 @@ func NewBadgerStore(path string) (*Store, error) {
 	}, nil
 }
 
+// GetEntry retrieves an entry
 func (s *Store) GetEntry(resource k8s.ResourceReference) (Entry, error) {
 	var entry Entry
 	err := s.db.View(func(txn *badger.Txn) error {
@@ -59,6 +65,7 @@ func (s *Store) GetEntry(resource k8s.ResourceReference) (Entry, error) {
 	return entry, err
 }
 
+// SaveEntry creates or replaces an entry
 func (s *Store) SaveEntry(entry Entry) error {
 	return s.db.Update(func(txn *badger.Txn) error {
 		data, err := json.Marshal(entry)
@@ -69,6 +76,7 @@ func (s *Store) SaveEntry(entry Entry) error {
 	})
 }
 
+// Close cleans up any underlying resources
 func (s *Store) Close() error {
 	return s.db.Close()
 }

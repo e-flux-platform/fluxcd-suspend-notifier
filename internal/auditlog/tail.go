@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// Tail streams audit log entries relating to fluxcd resources. Only audit log entries relating to non-system users
+// patching or creating resources are returned.
 func Tail(ctx context.Context, projectID string, clusterName string, cb func(*audit.AuditLog) error) error {
 	client, err := logging.NewClient(ctx)
 	if err != nil {

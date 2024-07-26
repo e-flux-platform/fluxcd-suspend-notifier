@@ -13,11 +13,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// Client is a thing wrapper around the kubernetes client. It exposes functions relevant for checking what fluxcd
+// resources exist, and what their underlying state look like.
 type Client struct {
 	client       *kubernetes.Clientset
 	apiExtClient *clientset.Clientset
 }
 
+// NewClient instantiates and returns a Client
 func NewClient(configPath string) (*Client, error) {
 	var (
 		config *rest.Config
@@ -48,6 +51,7 @@ func NewClient(configPath string) (*Client, error) {
 	}, nil
 }
 
+// GetRawResource retrieves a raw resource from the kubernetes API. This is used to fetch fluxcd custom resources.
 func (c *Client) GetRawResource(ctx context.Context, resource ResourceReference) ([]byte, error) {
 	absPath := path.Join(
 		"apis",
@@ -66,6 +70,7 @@ func (c *Client) GetRawResource(ctx context.Context, resource ResourceReference)
 	return body, nil
 }
 
+// GetRawResources retrieves a list of raw resources
 func (c *Client) GetRawResources(ctx context.Context, group ResourceType) ([]byte, error) {
 	absPath := path.Join(
 		"apis",
@@ -81,6 +86,7 @@ func (c *Client) GetRawResources(ctx context.Context, group ResourceType) ([]byt
 	return body, nil
 }
 
+// GetCustomResourceDefinitions fetches all custom resource definitions registered with the cluster.
 func (c *Client) GetCustomResourceDefinitions(ctx context.Context, listOptions metav1.ListOptions) (*v1.CustomResourceDefinitionList, error) {
 	return c.apiExtClient.
 		ApiextensionsV1().

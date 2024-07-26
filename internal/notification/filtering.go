@@ -8,6 +8,7 @@ import (
 	"github.com/expr-lang/expr/vm"
 )
 
+// NewFilteringNotifier instantiates and returns FilteringNotifier
 func NewFilteringNotifier(rawExpr string, delegate Notifier) (*FilteringNotifier, error) {
 	filter, err := expr.Compile(rawExpr)
 	if err != nil {
@@ -19,11 +20,13 @@ func NewFilteringNotifier(rawExpr string, delegate Notifier) (*FilteringNotifier
 	}, nil
 }
 
+// FilteringNotifier is a notifier implementation that filters notifications via an expression.
 type FilteringNotifier struct {
 	filter   *vm.Program
 	delegate Notifier
 }
 
+// Notify passes the notification to the underlying delegate if the expression is satisfied.
 func (fn *FilteringNotifier) Notify(ctx context.Context, notif Notification) error {
 	env := map[string]interface{}{
 		"resource":  notif.Resource,

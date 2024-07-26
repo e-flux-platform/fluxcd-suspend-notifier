@@ -11,11 +11,13 @@ import (
 	"time"
 )
 
+// SlackNotifier sends notifications to Slack via a webhook
 type SlackNotifier struct {
 	client     *http.Client
 	webhookURL string
 }
 
+// NewSlackNotifier instantiates and returns SlackNotifier
 func NewSlackNotifier(webhookURL string) (*SlackNotifier, error) {
 	if webhookURL == "" {
 		return nil, errors.New("empty webhook url supplied")
@@ -28,10 +30,12 @@ func NewSlackNotifier(webhookURL string) (*SlackNotifier, error) {
 	}, nil
 }
 
+// SlackWebhook is a Slack webhook payload
 type SlackWebhook struct {
 	Attachments []SlackAttachment `json:"attachments,omitempty"`
 }
 
+// SlackAttachment forms part of a Slack webhook payload
 type SlackAttachment struct {
 	Color      string                 `json:"color"`
 	AuthorName string                 `json:"author_name"`
@@ -40,12 +44,14 @@ type SlackAttachment struct {
 	Fields     []SlackAttachmentField `json:"fields,omitempty"`
 }
 
+// SlackAttachmentField forms part of a Slack webhook attachment value
 type SlackAttachmentField struct {
 	Title string `json:"title"`
 	Value string `json:"value"`
 	Short bool   `json:"short"`
 }
 
+// Notify sends a notification via the underlying Slack webhook URL.
 func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 	var (
 		action string
