@@ -61,7 +61,7 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 		action = "suspended"
 		color = "danger"
 	} else {
-		action = "unsuspended"
+		action = "resumed"
 		color = "good"
 	}
 
