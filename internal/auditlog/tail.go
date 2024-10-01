@@ -67,7 +67,7 @@ func tailLogs(ctx context.Context, client *logging.Client, projectID, clusterNam
 				fmt.Sprintf(`resource.labels.cluster_name="%s"`, clusterName),
 				`protoPayload."@type"="type.googleapis.com/google.cloud.audit.AuditLog"`,
 				`protoPayload.methodName=~"io\.fluxcd\.toolkit\..*\.(patch|create)"`,
-				`-protoPayload.authenticationInfo.principalEmail=~"system:.*"`,
+				`-protoPayload.authenticationInfo.principalEmail=~"^system:serviceaccount:flux-system:.*-controller$"`,
 			},
 			" AND ",
 		),
