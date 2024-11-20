@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/genproto/googleapis/cloud/audit"
@@ -153,6 +154,10 @@ func (w *Watcher) watch(ctx context.Context, types []k8s.ResourceType) error {
 
 		resourceName := logEntry.GetResourceName()
 		email := logEntry.GetAuthenticationInfo().GetPrincipalEmail()
+
+		if strings.Contains(email, "ww-gitops-weave-gitops") {
+			email = fmt.Sprintf("%s@gitops", logEntry.GetAuthenticationInfo().GetAuthoritySelector())
+		}
 
 		resourceRef, err := k8s.ResourceReferenceFromPath(resourceName)
 		if err != nil {
