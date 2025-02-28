@@ -6,10 +6,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 )
+
+var kindPluralToSingular = map[string]string{
+	"alerts":                 "alert",
+	"buckets":                "bucket",
+	"gitrepositories":        "gitrepository",
+	"helmcharts":             "helmchart",
+	"helmreleases":           "helmrelease",
+	"imagepolicies":          "imagepolicy",
+	"imagerepositories":      "imagerepository",
+	"imageupdateautomations": "imageupdateautomation",
+	"kustomizations":         "kustomization",
+	"ocirepositories":        "ocirepository",
+	"providers":              "provider",
+	"receivers":              "receiver",
+}
 
 // SlackNotifier sends notifications to Slack via a webhook
 type SlackNotifier struct {
@@ -65,7 +81,7 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 		color = "good"
 	}
 
-	kind := strings.TrimSuffix(notif.Resource.Type.Kind, "s")
+	kind := singularKind(notif.Resource.Type.Kind)
 
 	reqBody, err := json.Marshal(SlackWebhook{
 		Attachments: []SlackAttachment{
@@ -103,4 +119,13 @@ func (sn *SlackNotifier) Notify(ctx context.Context, notif Notification) error {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func singularKind(pluralKind string) string {
+	singular, found := kindPluralToSingular[strings.ToLower(pluralKind)]
+	if found {
+		return singular
+	}
+	slog.Warn("unrecognized kind", slog.String("kind", pluralKind))
+	return strings.TrimSuffix(pluralKind, "s") // best effort
 }
