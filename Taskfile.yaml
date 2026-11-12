@@ -1,0 +1,30 @@
+version: "3"
+
+vars:
+  ARTIFACT_REGISTRY: '{{ .ARTIFACT_REGISTRY | default "quay.io/road"}}'
+  GIT_HASH:
+    sh: |
+      if [ -n "${GITHUB_SHA}" ]; then
+        echo ${GITHUB_SHA}
+      else
+        echo "$(id -un)-local-$(git rev-parse --short HEAD)"
+      fi
+  RELEASE_ID: '{{ .RELEASE_ID | default "local" }}'
+
+tasks:
+  build:
+    cmds:
+      - cmd: |
+          docker build \
+          --tag {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:latest \
+          --tag {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:{{ .GIT_HASH }} \
+          --tag {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:release-{{ .RELEASE_ID }} \
+          --platform linux/amd64 \
+          .
+
+  push:
+    cmds:
+      - cmd: |
+          docker push {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:latest
+          docker push {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:{{ .GIT_HASH }}
+          docker push {{ .ARTIFACT_REGISTRY }}/fluxcd-suspend-notifier:release-{{ .RELEASE_ID }}
